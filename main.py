@@ -1,11 +1,20 @@
+import json
 import os
 import sys
 import time
 import glob
 import platform
 
-DISCONNECTED = "Lost connection with reason"
-CLOSED = "stop() called"
+# ==============================
+# LOAD CONFIG
+# ==============================
+with open("config.json", "r") as f:
+    config = json.load(f)
+
+DISCONNECTED = config.get("DISCONNECTED")
+CLOSED = config.get("CLOSED")
+USER_ID = config.get("USER_ID")
+TIMER = config.get("TIMER")
 
 def get_log_dir():
     system = platform.system()

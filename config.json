@@ -1,5 +1,6 @@
 {
     "DISCONNECTED": "Lost connection with reason",
     "CLOSED": "stop() called",
-    "USER_ID": "894170177330098217"
+    "USER_ID": "894170177330098217",
+    "TIMER": 21600
 }
