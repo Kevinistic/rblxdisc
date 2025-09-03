@@ -4,8 +4,10 @@ import sys
 import time
 import glob
 import platform
+import requests
 import threading
 import psutil
+from flask import Flask, jsonify
 
 # ==============================
 # LOAD CONFIG
@@ -14,12 +16,28 @@ with open("config.json", "r") as f:
     config = json.load(f)
 
 DISCONNECTED = config.get("DISCONNECTED")
-CLOSED = config.get("CLOSED")
 USER_ID = config.get("USER_ID")
 TIMER = config.get("TIMER")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 disconnect_timer = TIMER
 roblox_running = False
+lock = threading.Lock()
+
+latest_event = {"status": "Waiting for Roblox events..."}
+
+app = Flask(__name__)
+
+@app.route("/status")
+def get_status():
+    return jsonify(latest_event)
+
+def send_webhook(message):
+    data = {"content": message}
+    try:
+        requests.post(WEBHOOK_URL, json=data)
+    except Exception as e:
+        print(f"Webhook error: {e}")
 
 def get_log_dir():
     system = platform.system()
@@ -27,12 +45,8 @@ def get_log_dir():
         return os.path.expandvars(r"%LOCALAPPDATA%\Roblox\logs")
     elif system == "Darwin":  # macOS
         return os.path.expanduser("~/Library/Logs/Roblox")
-    else:  # Assume Linux (Wine)
-        # Adjust if you use a custom Wine prefix
+    else:  # Linux (Sober/Wine)
         return os.path.expanduser("~/.var/app/org.vinegarhq.Sober/data/sober/sober_logs/")
-
-def get_log_files(log_dir):
-    return set(glob.glob(os.path.join(log_dir, "*.log")))
 
 # ==============================
 # ROBLOX PROCESS CHECK
@@ -51,8 +65,12 @@ def watch_process():
     global roblox_running
     while True:
         if not is_roblox_running():
-            print("[ROBLOX CLOSED] Process ended")
-            roblox_running = False
+            event = "[ROBLOX CLOSED] Process ended"
+            print(event)
+            latest_event["status"] = event
+            send_webhook(event)
+            with lock:
+                roblox_running = False
             break
         time.sleep(2)
 
@@ -75,7 +93,7 @@ def close_roblox():
 def wait_for_new_log(log_dir, existing_logs):
     print("Waiting for Roblox to launch and create a new log file...")
     while True:
-        current_logs = get_log_files(log_dir)
+        current_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
         new_logs = current_logs - existing_logs
         if new_logs:
             new_log = max(new_logs, key=os.path.getctime)
@@ -88,38 +106,49 @@ def monitor_log(log_file):
     print(f"Monitoring: {log_file}")
     with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
         f.seek(0, os.SEEK_END)
-        while roblox_running:
-            if not roblox_running:
-                print("Stopping log monitoring because Roblox closed.")
-                break
+        while True:
+            with lock:
+                if not roblox_running:
+                    print("Stopping log monitoring because Roblox closed.")
+                    break
 
             line = f.readline()
             if disconnect_timer <= 0:
-                print("Disconnect timer expired. Closing Roblox...")
+                event = "Disconnect timer expired. Closing Roblox..."
+                print(event)
+                latest_event["status"] = event
+                send_webhook(event)
                 close_roblox()
                 break
+
             if not line:
                 time.sleep(1.0)
                 disconnect_timer -= 1
                 continue
-            if DISCONNECTED in line:
-                print(f"[DISCONNECT DETECTED] {line.strip()}")
 
-# =============================
+            if DISCONNECTED in line:
+                event = f"[DISCONNECT DETECTED] {line.strip()}"
+                print(event)
+                latest_event["status"] = event
+                send_webhook(event)
+                disconnect_timer = TIMER  # Reset timer
+
+# ==============================
 # MAIN FUNCTION
-# =============================
+# ==============================
 def main():
-    global roblox_running, disconnect_timer
+    global roblox_running
 
     log_dir = get_log_dir()
     if not os.path.exists(log_dir):
         print(f"Roblox logs folder not found: {log_dir}")
         sys.exit(1)
 
-    existing_logs = get_log_files(log_dir)
+    existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
     new_log = wait_for_new_log(log_dir, existing_logs)
 
-    roblox_running = True
+    with lock:
+        roblox_running = True
 
     # Start process watcher in background
     threading.Thread(target=watch_process, daemon=True).start()
@@ -127,4 +156,5 @@ def main():
     monitor_log(new_log)
 
 if __name__ == "__main__":
+    threading.Thread(target=lambda: app.run(host="127.0.0.1", port=5000, use_reloader=False)).start()
     main()

@@ -1,6 +1,7 @@
-import asyncio
 import json
+import requests
 import os
+
 
 import discord
 from discord.ext import commands
@@ -11,7 +12,8 @@ from discord.ext import commands
 with open("config.json", "r") as f:
     config = json.load(f)
 
-DISCORD_TOKEN = config.get("DISCORD_TOKEN")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+STATUS_URL = "http://127.0.0.1:5000/status"
 PREFIX = "!"
 
 INTENTS = discord.Intents.default()
@@ -30,20 +32,17 @@ bot = commands.Bot(command_prefix=PREFIX, intents=INTENTS)
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-@bot.event
-async def on_message(message: discord.Message):
-    await bot.process_commands(message)
-
-    if message.author == bot.user:
-        return
-    if message.channel.id != TARGET_CHANNEL_ID:
-        return
-
-    await stop_ping_cycle()
-
-    detected = embed_detect_keywords(message)
-    if detected:
-        await start_ping_cycle(detected)
+@bot.command()
+async def status(ctx):
+    try:
+        response = requests.get(STATUS_URL, timeout=3)
+        if response.status_code == 200:
+            data = response.json()
+            await ctx.send(f"✅ Current status: **{data['status']}**")
+        else:
+            await ctx.send("⚠ Main service returned an error.")
+    except requests.exceptions.RequestException:
+        await ctx.send("❌ Could not reach main service. Is it running?")
 
 # ==============================
 # RUN
