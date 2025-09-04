@@ -10,13 +10,12 @@ import psutil
 from flask import Flask, jsonify
 
 # ==============================
-# LOAD CONFIG
+# CONFIG
 # ==============================
 with open("config.json", "r") as f:
     config = json.load(f)
 
 DISCONNECTED = config.get("DISCONNECTED")
-USER_ID = config.get("USER_ID")
 TIMER = config.get("TIMER")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
@@ -24,32 +23,42 @@ disconnect_timer = TIMER
 roblox_running = False
 lock = threading.Lock()
 
-latest_event = {"status": "Waiting for Roblox events..."}
+latest_event = {
+    "status": "Waiting for Roblox events...",
+    "timer": disconnect_timer
+}
 
 app = Flask(__name__)
 
+# ==============================
+# API ENDPOINT
+# ==============================
 @app.route("/status")
 def get_status():
-    return jsonify(latest_event)
+    with lock:
+        return jsonify(latest_event)
 
+# ==============================
+# HELPERS
+# ==============================
 def send_webhook(message):
-    data = {"content": message}
-    try:
-        requests.post(WEBHOOK_URL, json=data)
-    except Exception as e:
-        print(f"Webhook error: {e}")
+    if WEBHOOK_URL:
+        try:
+            requests.post(WEBHOOK_URL, json={"content": message})
+        except Exception as e:
+            print(f"Webhook error: {e}")
 
 def get_log_dir():
     system = platform.system()
     if system == "Windows":
         return os.path.expandvars(r"%LOCALAPPDATA%\Roblox\logs")
-    elif system == "Darwin":  # macOS
+    elif system == "Darwin":
         return os.path.expanduser("~/Library/Logs/Roblox")
     else:  # Linux (Sober/Wine)
         return os.path.expanduser("~/.var/app/org.vinegarhq.Sober/data/sober/sober_logs/")
 
 # ==============================
-# ROBLOX PROCESS CHECK
+# PROCESS HANDLING
 # ==============================
 def is_roblox_running():
     for proc in psutil.process_iter(['name']):
@@ -67,16 +76,13 @@ def watch_process():
         if not is_roblox_running():
             event = "[ROBLOX CLOSED] Process ended"
             print(event)
-            latest_event["status"] = event
-            send_webhook(event)
             with lock:
+                latest_event["status"] = event
                 roblox_running = False
+            send_webhook(event)
             break
         time.sleep(2)
 
-# ==============================
-# KILL ROBLOX PROCESS
-# ==============================
 def close_roblox():
     for proc in psutil.process_iter(['name']):
         if proc.info['name'] and (
@@ -93,8 +99,7 @@ def close_roblox():
 def wait_for_new_log(log_dir, existing_logs):
     print("Waiting for Roblox to launch and create a new log file...")
     while True:
-        current_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
-        new_logs = current_logs - existing_logs
+        new_logs = set(glob.glob(os.path.join(log_dir, "*.log"))) - existing_logs
         if new_logs:
             new_log = max(new_logs, key=os.path.getctime)
             print(f"New Roblox log detected: {new_log}")
@@ -116,7 +121,8 @@ def monitor_log(log_file):
             if disconnect_timer <= 0:
                 event = "Disconnect timer expired. Closing Roblox..."
                 print(event)
-                latest_event["status"] = event
+                with lock:
+                    latest_event["status"] = event
                 send_webhook(event)
                 close_roblox()
                 break
@@ -124,37 +130,50 @@ def monitor_log(log_file):
             if not line:
                 time.sleep(1.0)
                 disconnect_timer -= 1
+                with lock:
+                    latest_event["timer"] = disconnect_timer
                 continue
 
             if DISCONNECTED in line:
                 event = f"[DISCONNECT DETECTED] {line.strip()}"
                 print(event)
-                latest_event["status"] = event
+                with lock:
+                    latest_event["status"] = event
                 send_webhook(event)
                 disconnect_timer = TIMER  # Reset timer
+                with lock:
+                    latest_event["timer"] = disconnect_timer
 
 # ==============================
 # MAIN FUNCTION
 # ==============================
 def main():
-    global roblox_running
+    global roblox_running, disconnect_timer
 
     log_dir = get_log_dir()
     if not os.path.exists(log_dir):
         print(f"Roblox logs folder not found: {log_dir}")
         sys.exit(1)
 
-    existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
-    new_log = wait_for_new_log(log_dir, existing_logs)
+    while True:
+        existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
+        new_log = wait_for_new_log(log_dir, existing_logs)
 
-    with lock:
-        roblox_running = True
+        with lock:
+            roblox_running = True
+            latest_event["status"] = "Waiting for Roblox events..."
+            disconnect_timer = TIMER
+            latest_event["timer"] = disconnect_timer
 
-    # Start process watcher in background
-    threading.Thread(target=watch_process, daemon=True).start()
+        threading.Thread(target=watch_process, daemon=True).start()
+        monitor_log(new_log)
 
-    monitor_log(new_log)
+        print("Roblox session ended. Restarting monitoring for next session...")
+        time.sleep(2)
 
+# ==============================
+# ENTRY POINT
+# ==============================
 if __name__ == "__main__":
-    threading.Thread(target=lambda: app.run(host="127.0.0.1", port=5000, use_reloader=False)).start()
+    threading.Thread(target=lambda: app.run(host="127.0.0.1", port=5000, use_reloader=False), daemon=True).start()
     main()
