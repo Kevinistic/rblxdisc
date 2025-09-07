@@ -1,6 +1,6 @@
 # RoDisc
 roblox disconnect</br>
-connecting your client status to a bot to send it to a discord channel
+connecting your client status to a discord bot
 
 ## Prerequisites
 1. install requirements in the folder's terminal
