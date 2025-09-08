@@ -76,6 +76,7 @@ def close_roblox():
 # COMMAND POLLER
 # =========================
 def poll_commands():
+    global roblox_running, end_time
     while True:
         try:
             r = requests.get(f"{BOT_URL}/poll/{USER_ID}", headers=get_auth_header(), timeout=5)
@@ -86,10 +87,17 @@ def poll_commands():
                     post_event("REMOTE COMMAND", "Kill command received. Closing Roblox...")
                     close_roblox()
                 elif cmd["action"] == "status":
-                    # Gather status info
+                    running = is_roblox_running()
+                    # If Roblox is running and timer is 0, set timer
+                    if running and (end_time == 0 or remaining_time() <= 0):
+                        end_time = time.monotonic() + TIMER
+                        roblox_running = True
+                    elif not running:
+                        roblox_running = False
+                        end_time = 0
                     status = {
                         "title": "Client Status",
-                        "description": f"Roblox running: {is_roblox_running()}\nTime left: {hhmmss(remaining_time())}"
+                        "description": f"Roblox running: {running}\nTime left: {hhmmss(remaining_time())}"
                     }
                     try:
                         requests.post(f"{BOT_URL}/status/{USER_ID}", json=status, headers=get_auth_header(), timeout=5)
@@ -111,11 +119,17 @@ def main():
         sys.exit(f"[client] Roblox logs folder not found: {log_dir}")
 
     while True:
-        existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
-        new_log = wait_for_new_log(log_dir, existing_logs)
+        # Wait for Roblox to start (process appears)
+        while not is_roblox_running():
+            roblox_running = False
+            end_time = 0
+            time.sleep(1)
         roblox_running = True
         end_time = time.monotonic() + TIMER
         post_event("SESSION STARTED", "Waiting for Roblox events...")
+
+        existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
+        new_log = wait_for_new_log(log_dir, existing_logs)
         threading.Thread(target=watch_process, daemon=True).start()
         monitor_log(new_log)
 
