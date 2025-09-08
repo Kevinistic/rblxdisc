@@ -1,4 +1,4 @@
-# RoDisc
+# RblxDisc
 roblox disconnect</br>
 connecting your client status to a discord bot
 
