@@ -151,7 +151,7 @@ def wait_for_new_log(log_dir, existing_logs):
         time.sleep(0.5)
 
 def monitor_log(log_file):
-    global end_time
+    global end_time, roblox_running
     with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
         f.seek(0, os.SEEK_END)
         while True:
@@ -164,6 +164,7 @@ def monitor_log(log_file):
                     post_event("TIMER EXPIRED", "Disconnect timer expired. Closing Roblox...")
                     close_roblox()
                     end_time = 0  # Reset timer immediately when timer expires
+                    roblox_running = False
                     break
                 continue
             if DISCONNECTED in line:
