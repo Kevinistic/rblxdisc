@@ -166,8 +166,6 @@ def monitor_log(log_file):
                     end_time = 0  # Reset timer immediately when timer expires
                     break
                 continue
-            if AUTO_KILL:
-                end_time = time.monotonic() + TIMER
             if DISCONNECTED in line:
                 post_event("DISCONNECT DETECTED", f"{line.strip()}\nTime left: {hhmmss(remaining_time())}")
 
