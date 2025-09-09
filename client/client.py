@@ -15,8 +15,6 @@ with open("config.json", "r") as f:
     config = json.load(f)
 
 DISCONNECTED = "Lost connection with reason"
-TIMER = 21600
-AUTO_KILL = True
 USER_ID = config.get("USER_ID")
 BOT_URL = config.get("BOT_URL")
 AUTH_TOKEN = config.get("AUTH_TOKEN")
@@ -25,8 +23,8 @@ if not USER_ID or not BOT_URL:
     sys.exit("[FATAL] USER_ID or BOT_URL missing in .env")
 
 lock = threading.Lock()
-end_time = 0
 roblox_running = False
+session_start = 0  # monotonic time when Roblox session starts
 
 # =========================
 # HELPERS
@@ -41,8 +39,11 @@ def post_event(title, description):
     except Exception as e:
         print(f"[client] Failed to post event: {e}")
 
-def remaining_time():
-    return max(0, int(end_time - time.monotonic()))
+
+def elapsed_time():
+    if session_start == 0:
+        return 0
+    return max(0, int(time.monotonic() - session_start))
 
 def hhmmss(seconds):
     h = seconds // 3600
@@ -76,7 +77,7 @@ def close_roblox():
 # COMMAND POLLER
 # =========================
 def poll_commands():
-    global roblox_running, end_time
+    global roblox_running, session_start
     while True:
         try:
             r = requests.get(f"{BOT_URL}/poll/{USER_ID}", headers=get_auth_header(), timeout=5)
@@ -88,16 +89,16 @@ def poll_commands():
                     close_roblox()
                 elif cmd["action"] == "status":
                     running = is_roblox_running()
-                    # If Roblox is running and timer is 0, set timer
-                    if running and (end_time == 0 or remaining_time() <= 0):
-                        end_time = time.monotonic() + TIMER
+                    # If Roblox is running and session_start is 0, set session_start
+                    if running and session_start == 0:
+                        session_start = time.monotonic()
                         roblox_running = True
                     elif not running:
                         roblox_running = False
-                        end_time = 0
+                        session_start = 0
                     status = {
                         "title": "Client Status",
-                        "description": f"Roblox running: {running}\nTime left: {hhmmss(remaining_time())}"
+                        "description": f"Roblox running: {running}\nTime elapsed: {hhmmss(elapsed_time())}"
                     }
                     try:
                         requests.post(f"{BOT_URL}/status/{USER_ID}", json=status, headers=get_auth_header(), timeout=5)
@@ -111,7 +112,7 @@ def poll_commands():
 # MAIN LOGIC
 # =========================
 def main():
-    global roblox_running, end_time
+    global roblox_running, session_start
     threading.Thread(target=poll_commands, daemon=True).start()
 
     log_dir = get_log_dir()
@@ -122,10 +123,10 @@ def main():
         # Wait for Roblox to start (process appears)
         while not is_roblox_running():
             roblox_running = False
-            end_time = 0
+            session_start = 0
             time.sleep(1)
         roblox_running = True
-        end_time = time.monotonic() + TIMER
+        session_start = time.monotonic()
         post_event("SESSION STARTED", "Waiting for Roblox events...")
 
         existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
@@ -151,7 +152,7 @@ def wait_for_new_log(log_dir, existing_logs):
         time.sleep(0.5)
 
 def monitor_log(log_file):
-    global end_time, roblox_running
+    global roblox_running, session_start
     with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
         f.seek(0, os.SEEK_END)
         while True:
@@ -160,23 +161,17 @@ def monitor_log(log_file):
             line = f.readline()
             if not line:
                 time.sleep(1)
-                if AUTO_KILL and remaining_time() <= 0:
-                    post_event("TIMER EXPIRED", "Disconnect timer expired. Closing Roblox...")
-                    close_roblox()
-                    end_time = 0  # Reset timer immediately when timer expires
-                    roblox_running = False
-                    break
                 continue
             if DISCONNECTED in line:
-                post_event("DISCONNECT DETECTED", f"{line.strip()}\nTime left: {hhmmss(remaining_time())}")
+                post_event("DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(elapsed_time())}")
 
 def watch_process():
-    global roblox_running, end_time
+    global roblox_running, session_start
     while True:
         if not is_roblox_running():
-            post_event("ROBLOX CLOSED", f"Process ended.\nTime left: {hhmmss(remaining_time())}")
+            post_event("ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(elapsed_time())}")
             roblox_running = False
-            end_time = 0  # Reset timer when Roblox closes
+            session_start = 0
             break
         time.sleep(2)
 
