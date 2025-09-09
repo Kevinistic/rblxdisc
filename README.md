@@ -1,12 +1,11 @@
 # RblxDisc
-roblox disconnect</br>
-connecting your client status to a discord bot
+roblox disconnect<br>
+connecting your client status to a discord bot<br>
+see for yourself here https://discord.gg/4UfEXVcHFy
 
-## Prerequisites
-1. install requirements in the folder's terminal
-    ```bash
-    pip install -r requirements.txt
-2. wip
+## Guide
+everything is in the server below
+https://discord.gg/4UfEXVcHFy
 
 ## Credits
 - @cn3z on Discord: everything lol
