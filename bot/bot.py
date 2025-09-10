@@ -13,9 +13,11 @@ load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 PORT = int(os.getenv("PORT", "5000"))
-FOOTER_TEXT = os.getenv("FOOTER_TEXT", "Roblox Monitor")
+FOOTER_TEXT = os.getenv("FOOTER_TEXT")
 FOOTER_ICON = os.getenv("FOOTER_ICON")
 PING_USER = os.getenv("PING_USER", "true").lower() in ("1", "true", "yes")
+ADMIN = [int(x) for x in os.getenv("ADMIN", "").split(",") if x.strip().isdigit()]
+DEBUG = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
 
 TOKENS_FILE = "user_tokens.json"
 
@@ -121,21 +123,33 @@ def receive_status(user_id):
 # =======================
 # DISCORD COMMANDS
 # =======================
+def admin_only():
+    async def predicate(ctx):
+        if DEBUG and ctx.author.id not in ADMIN:
+            try:
+                await ctx.reply("bot is not accessible rn vro", delete_after=5)
+            except:
+                pass
+            return False
+        return True
+    return commands.check(predicate)
+
 @bot.command()
+@admin_only()
 async def status(ctx):
     if ctx.guild:
         await ctx.reply("This command can only be used in DMs.", delete_after=5)
         return
     uid = str(ctx.author.id)
     if not get_token_for_user(uid):
-        await ctx.reply("You are not registered. Use !register to get your client token.")
+        await ctx.reply("You are not registered. Use !register to get your client token.", delete_after=5)
         return
 
     # Send status command to client
     if uid not in command_queue:
         command_queue[uid] = []
     command_queue[uid].append({"action": "status"})
-    await ctx.send("✅ Status command queued for your client.")
+    await ctx.send("✅ Status command queued for your client.", delete_after=5)
 
     # Wait for client to respond (polling status_responses)
     for _ in range(20):  # Wait up to 10 seconds (20 * 0.5s)
@@ -150,23 +164,25 @@ async def status(ctx):
             embed.set_footer(text=FOOTER_TEXT, icon_url=FOOTER_ICON or discord.Embed.Empty)
             await ctx.send(embed=embed)
             return
-    await ctx.send("❌ No response from client.")
+    await ctx.send("❌ No response from client.", delete_after=5)
 
 @bot.command()
+@admin_only()
 async def kill(ctx):
     if ctx.guild:
         await ctx.reply("This command can only be used in DMs.", delete_after=5)
         return
     uid = str(ctx.author.id)
     if not get_token_for_user(uid):
-        await ctx.reply("You are not registered. Use !register to get your client token.")
+        await ctx.reply("You are not registered. Use !register to get your client token.", delete_after=5)
         return
     if uid not in command_queue:
         command_queue[uid] = []
     command_queue[uid].append({"action": "kill"})
-    await ctx.send("✅ Kill command queued for your client.")
+    await ctx.send("✅ Kill command queued for your client.", delete_after=5)
 
 @bot.command()
+@admin_only()
 async def register(ctx):
     if ctx.guild:
         await ctx.reply("Please DM me to register.", delete_after=5)
