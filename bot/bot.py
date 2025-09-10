@@ -135,6 +135,7 @@ async def status(ctx):
     if uid not in command_queue:
         command_queue[uid] = []
     command_queue[uid].append({"action": "status"})
+    await ctx.send("✅ Status command queued for your client.")
 
     # Wait for client to respond (polling status_responses)
     for _ in range(20):  # Wait up to 10 seconds (20 * 0.5s)
