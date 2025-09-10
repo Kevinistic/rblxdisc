@@ -79,6 +79,14 @@ def close_roblox():
 def poll_commands():
     global roblox_running, session_start
     while True:
+        # Always check if Roblox is running and session_start is not set
+        running = is_roblox_running()
+        if running and session_start == 0:
+            session_start = time.monotonic()
+            roblox_running = True
+        elif not running:
+            roblox_running = False
+            session_start = 0
         try:
             r = requests.get(f"{BOT_URL}/poll/{USER_ID}", headers=get_auth_header(), timeout=5)
             data = r.json()
@@ -88,17 +96,9 @@ def poll_commands():
                     post_event("REMOTE COMMAND", "Kill command received. Closing Roblox...")
                     close_roblox()
                 elif cmd["action"] == "status":
-                    running = is_roblox_running()
-                    # If Roblox is running and session_start is 0, set session_start
-                    if running and session_start == 0:
-                        session_start = time.monotonic()
-                        roblox_running = True
-                    elif not running:
-                        roblox_running = False
-                        session_start = 0
                     status = {
                         "title": "Client Status",
-                        "description": f"Roblox running: {running}\nTime elapsed: {hhmmss(elapsed_time())}"
+                        "description": f"Roblox running: {roblox_running}\nTime elapsed: {hhmmss(elapsed_time())}"
                     }
                     try:
                         requests.post(f"{BOT_URL}/status/{USER_ID}", json=status, headers=get_auth_header(), timeout=5)
