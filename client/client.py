@@ -9,12 +9,36 @@ import threading
 import psutil
 
 # =========================
+# SINGLE INSTANCE CHECK
+# =========================
+def is_another_instance_running():
+    current_pid = os.getpid()
+    this_file = os.path.abspath(__file__)
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if proc.info['pid'] == current_pid:
+                continue
+            cmdline = proc.info.get('cmdline')
+            if not cmdline:
+                continue
+            # Check if any part of the command line matches this script
+            for arg in cmdline:
+                if os.path.abspath(arg) == this_file:
+                    return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return False
+
+if is_another_instance_running():
+    print("[client] Another instance of client.py is already running. Exiting.")
+    sys.exit(1)
+
+# =========================
 # CONFIGURATION
 # =========================
 with open("config.json", "r") as f:
     config = json.load(f)
 
-DISCONNECTED = "Lost connection with reason"
 USER_ID = config.get("USER_ID")
 BOT_URL = config.get("BOT_URL")
 AUTH_TOKEN = config.get("AUTH_TOKEN")
@@ -113,26 +137,33 @@ def poll_commands():
 # =========================
 def main():
     global roblox_running, session_start
-    threading.Thread(target=poll_commands, daemon=True).start()
+    poller_started = getattr(main, "_poller_started", False)
+    if not poller_started:
+        threading.Thread(target=poll_commands, daemon=True).start()
+        main._poller_started = True
 
     log_dir = get_log_dir()
     if not os.path.exists(log_dir):
         sys.exit(f"[client] Roblox logs folder not found: {log_dir}")
 
     while True:
-        # Wait for Roblox to start (process appears)
-        while not is_roblox_running():
-            roblox_running = False
-            session_start = 0
-            time.sleep(1)
-        roblox_running = True
-        session_start = time.monotonic()
-        post_event("SESSION STARTED", "Waiting for Roblox events...")
+        try:
+            # Wait for Roblox to start (process appears)
+            while not is_roblox_running():
+                roblox_running = False
+                session_start = 0
+                time.sleep(1)
+            roblox_running = True
+            session_start = time.monotonic()
+            post_event("SESSION STARTED", "Waiting for Roblox events...")
 
-        existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
-        new_log = wait_for_new_log(log_dir, existing_logs)
-        threading.Thread(target=watch_process, daemon=True).start()
-        monitor_log(new_log)
+            existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
+            new_log = wait_for_new_log(log_dir, existing_logs)
+            monitor_log(new_log)
+            # RESTARTING...
+        except Exception as e:
+            print(f"[client] Exception in main loop: {e}")
+            time.sleep(2)
 
 def get_log_dir():
     system = platform.system()
@@ -153,7 +184,9 @@ def wait_for_new_log(log_dir, existing_logs):
 
 def monitor_log(log_file):
     global roblox_running, session_start
-    with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+    f = None
+    try:
+        f = open(log_file, "r", encoding="utf-8", errors="ignore")
         f.seek(0, os.SEEK_END)
         while True:
             if not roblox_running:
@@ -162,18 +195,19 @@ def monitor_log(log_file):
             if not line:
                 time.sleep(1)
                 continue
-            if DISCONNECTED in line:
+            if "Lost connection with reason" in line: # dc
                 post_event("DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(elapsed_time())}")
-
-def watch_process():
-    global roblox_running, session_start
-    while True:
-        if not is_roblox_running():
-            post_event("ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(elapsed_time())}")
-            roblox_running = False
-            session_start = 0
-            break
-        time.sleep(2)
+                break
+            if "stop() called" in line: # closed
+                post_event("ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(elapsed_time())}")
+                roblox_running = False
+                session_start = 0
+                break
+    except Exception as e:
+        print(f"[client] Exception in monitor_log: {e}")
+    finally:
+        if f:
+            f.close()
 
 if __name__ == "__main__":
     try:
