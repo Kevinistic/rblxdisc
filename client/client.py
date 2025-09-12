@@ -195,7 +195,7 @@ def monitor_log(log_file):
             if not line:
                 time.sleep(1)
                 continue
-            if "Lost connection with reason" in line: # dc
+            if "Lost connection with reason" in line or "Client has been disconnected with reason" in line: # dc
                 post_event("DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(elapsed_time())}")
                 break
             if "stop() called" in line: # closed
