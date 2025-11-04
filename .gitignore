@@ -1,3 +1,3 @@
 .env
 user_tokens.json
-bot_log_*.txt
+logs

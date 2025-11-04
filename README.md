@@ -4,6 +4,11 @@ connecting your client status to a discord bot<br>
 see for yourself here https://discord.gg/4UfEXVcHFy
 
 ## Guide
+run
+```python
+pip install -r requirements.txt
+```
+
 uhh idk man just paste the entire code to gpt
 
 ## Credits
