@@ -25,6 +25,7 @@ FOOTER_TEXT = os.getenv("FOOTER_TEXT", "Roblox Monitor")
 FOOTER_ICON = os.getenv("FOOTER_ICON", "")
 PING_USER = os.getenv("PING_USER", "true").lower() in ("1", "true", "yes")
 LOG_RETENTION = int(os.getenv("LOG_RETENTION", "7"))
+HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "3"))  # in hours
 
 if not DISCORD_TOKEN or not USER_ID:
     sys.exit("[FATAL] DISCORD_TOKEN or USER_ID missing in .env")
@@ -335,7 +336,7 @@ async def on_resumed():
 # =========================
 # HEARTBEAT TASK
 # =========================
-@tasks.loop(hours=24)
+@tasks.loop(hours=HEARTBEAT_INTERVAL)
 async def heartbeat():
     await send_event("HEARTBEAT", "Bot still active and responsive.", 0x00FFFF)
     log_message("[HEARTBEAT] Bot alive notification sent.")
