@@ -465,7 +465,7 @@ def monitor_logs_thread():
                 if not line:
                     time.sleep(1)
                     continue
-                if any(k in line for k in ["Lost connection", "Client has been disconnected", "Disconnected:"]):
+                if "Lost connection with reason" in line or "Client has been disconnected with reason" in line:
                     with state_lock:
                         last_roblox_disconnect_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     log_message(f"Roblox disconnect detected: {line.strip()}")
