@@ -471,6 +471,7 @@ def monitor_logs_thread():
                     log_message(f"Roblox disconnect detected: {line.strip()}")
                     # Use safe_dispatch to avoid scheduling on closed loop
                     safe_dispatch(send_event, "DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(elapsed_time())}", 0xFF0000)
+                    close_roblox()
                     break
 
                 if "stop() called" in line:
