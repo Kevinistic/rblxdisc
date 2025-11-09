@@ -324,7 +324,7 @@ async def on_resumed():
                 dt1 = datetime.strptime(disconnect_timestamp, "%Y-%m-%d %H:%M:%S")
                 dt2 = datetime.strptime(last_roblox_disconnect_time, "%Y-%m-%d %H:%M:%S")
                 delta = abs((dt1 - dt2).total_seconds())
-                if delta <= 60:  # within 1 minute window
+                if delta <= 3600:  # within 1h window, adjust as needed
                     possibledisconnect = f"\nPossible Roblox disconnect at {last_roblox_disconnect_time}"
             except Exception:
                 pass
@@ -477,6 +477,7 @@ def monitor_logs_thread():
                 if "stop() called" in line:
                     log_message(f"Roblox closed: {line.strip()}")
                     safe_dispatch(send_event, "ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(elapsed_time())}", 0xFFA500)
+                    close_roblox() # why the fuck?
                     break
     except Exception:
         log_message(traceback.format_exc())
