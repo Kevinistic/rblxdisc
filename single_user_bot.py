@@ -20,7 +20,16 @@ load_dotenv()
 # CONFIGURATION
 # =========================
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-USER_ID = int(os.getenv("USER_ID"))  # Your Discord user ID
+
+# Validate and parse USER_ID
+try:
+    user_id_str = os.getenv("USER_ID", "")
+    if not user_id_str:
+        raise ValueError("USER_ID not provided")
+    USER_ID = int(user_id_str)
+except (ValueError, TypeError) as e:
+    sys.exit("[FATAL] USER_ID must be a valid integer in .env")
+
 FOOTER_TEXT = os.getenv("FOOTER_TEXT", "Roblox Monitor")
 FOOTER_ICON = os.getenv("FOOTER_ICON", "")
 PING_USER = os.getenv("PING_USER", "true").lower() in ("1", "true", "yes")
@@ -49,6 +58,7 @@ state_lock = threading.Lock()
 # LOGGING FUNCTIONS
 # =========================
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+_in_log_rotation = False  # Flag to prevent recursive calls during rotation
 
 def ensure_log_dir():
     """Ensure the logs directory exists."""
@@ -60,7 +70,7 @@ def ensure_log_dir():
         sys.exit(1)
 
 def log_message(message):
-    global log_file
+    global log_file, _in_log_rotation
     ensure_log_dir()
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -77,8 +87,18 @@ def log_message(message):
             if os.path.exists(log_file) and os.path.getsize(log_file) > 5 * 1024 * 1024:
                 rotated = log_file.replace(".txt", f"_rotated_{int(time.time())}.txt")
                 os.rename(log_file, rotated)
-                log_message(f"[INFO] Log rotated -> {os.path.basename(rotated)}")
-                log_file = os.path.join(LOG_DIR, f"bot_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+                
+                # Write rotation message directly without recursion to avoid stack issues
+                if not _in_log_rotation:
+                    _in_log_rotation = True
+                    try:
+                        rotation_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Log rotated -> {os.path.basename(rotated)}\n"
+                        log_file = os.path.join(LOG_DIR, f"bot_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+                        with open(log_file, "a", encoding="utf-8") as f:
+                            f.write(rotation_msg)
+                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] Log rotated -> {os.path.basename(rotated)}")
+                    finally:
+                        _in_log_rotation = False
 
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(log_line + "\n")
@@ -167,18 +187,22 @@ def hhmmss(seconds):
     s = seconds % 60
     return f"{h}h {m}m {s}s"
 
+# Locks for Roblox detection caching
+_last_check_lock = threading.Lock()
 _last_check = 0
 _last_running = False
+
 def is_roblox_running():
     global _last_check, _last_running
-    if time.time() - _last_check < 1:
+    with _last_check_lock:
+        if time.time() - _last_check < 1:
+            return _last_running
+        _last_check = time.time()
+        _last_running = any(
+            "roblox" in (p.info.get('name') or "").lower()
+            for p in psutil.process_iter(['name'])
+        )
         return _last_running
-    _last_check = time.time()
-    _last_running = any(
-        "roblox" in (p.info.get('name') or "").lower()
-        for p in psutil.process_iter(['name'])
-    )
-    return _last_running
 
 def close_roblox():
     killed = 0
@@ -195,7 +219,7 @@ def close_roblox():
 def get_log_dir():
     system = platform.system()
     if system == "Windows":
-        return os.path.expandvars(r"%LOCALAPPDATA%\\Roblox\\logs")
+        return os.path.expandvars(r"%LOCALAPPDATA%\Roblox\logs")
     elif system == "Darwin":
         return os.path.expanduser("~/Library/Logs/Roblox")
     else:
@@ -251,19 +275,28 @@ def handle_sigterm(signum, frame):
     # Try to notify user if possible (use safe_dispatch to avoid dead-loop scheduling)
     safe_dispatch(send_event, "BOT SHUTDOWN", "Received SIGTERM, shutting down...", 0xFF0000)
 
+    # Give Discord message a moment to send
+    time.sleep(0.5)
+
     # Try to close the bot gracefully if loop still running
     try:
         loop = getattr(bot, "loop", None)
         if loop and loop.is_running() and not bot.is_closed():
-            # schedule bot.close() onto the running loop
-            asyncio.run_coroutine_threadsafe(bot.close(), loop)
+            # schedule bot.close() onto the running loop and wait for it
+            future = asyncio.run_coroutine_threadsafe(bot.close(), loop)
+            try:
+                future.result(timeout=5)  # Wait up to 5 seconds for clean shutdown
+            except Exception as e:
+                log_message(f"[WARN] Timeout waiting for bot.close(): {e}")
     except Exception as e:
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARN] Failed to schedule bot.close(): {e}")
+        log_message(f"[WARN] Failed to schedule bot.close(): {e}")
 
+    log_message("Shutdown complete.")
     # Finally exit the process
     sys.exit(0)
 
 signal.signal(signal.SIGTERM, handle_sigterm)
+signal.signal(signal.SIGINT, handle_sigterm)  # Also handle Ctrl+C on Unix/Linux
 if hasattr(signal, "SIGBREAK"):  # Windows-specific
     signal.signal(signal.SIGBREAK, handle_sigterm)
 
@@ -276,15 +309,14 @@ async def on_ready():
     with state_lock:
         if monitored_user:
             return  # already set
-
-    log_message(f"Logged in as {bot.user} ({bot.user.id})")
-    try:
-        with state_lock:
+        
+        log_message(f"Logged in as {bot.user} ({bot.user.id})")
+        try:
             monitored_user = await bot.fetch_user(USER_ID)
-        log_message(f"Monitoring user: {monitored_user.name}")
-    except Exception:
-        log_message(traceback.format_exc())
-        sys.exit(1)
+            log_message(f"Monitoring user: {monitored_user.name}")
+        except Exception:
+            log_message(traceback.format_exc())
+            sys.exit(1)
 
     # Start monitor & heartbeat AFTER bot is ready and loop is running
     if not monitor_roblox.is_running():
@@ -310,28 +342,33 @@ async def on_disconnect():
 
 @bot.event
 async def on_resumed():
-    global disconnect_timestamp
     log_message("Resumed connection to Discord!")
 
-    if not disconnect_timestamp:
+    # Atomically read disconnect timestamps
+    with state_lock:
+        dt_disconnect = disconnect_timestamp
+        dt_roblox = last_roblox_disconnect_time
+
+    if not dt_disconnect:
         return
 
     possibledisconnect = ""
 
-    with state_lock:
-        if last_roblox_disconnect_time:
-            try:
-                dt1 = datetime.strptime(disconnect_timestamp, "%Y-%m-%d %H:%M:%S")
-                dt2 = datetime.strptime(last_roblox_disconnect_time, "%Y-%m-%d %H:%M:%S")
-                delta = abs((dt1 - dt2).total_seconds())
-                if delta <= 3600:  # within 1h window, adjust as needed
-                    possibledisconnect = f"\nPossible Roblox disconnect at {last_roblox_disconnect_time}"
-            except Exception:
-                pass
+    if dt_roblox:
+        try:
+            dt1 = datetime.strptime(dt_disconnect, "%Y-%m-%d %H:%M:%S")
+            dt2 = datetime.strptime(dt_roblox, "%Y-%m-%d %H:%M:%S")
+            delta = abs((dt1 - dt2).total_seconds())
+            if delta <= 3600:  # within 1h window, adjust as needed
+                possibledisconnect = f"\nPossible Roblox disconnect at {dt_roblox}"
+        except Exception:
+            pass
 
     # Use safe_dispatch to avoid scheduling on closed loop
-    safe_dispatch(send_event, "BOT DISCONNECTED", f"Reconnected after disconnect at {disconnect_timestamp}" + possibledisconnect, 0xFFA500)
-    disconnect_timestamp = None
+    safe_dispatch(send_event, "BOT DISCONNECTED", f"Reconnected after disconnect at {dt_disconnect}" + possibledisconnect, 0xFFA500)
+    
+    with state_lock:
+        disconnect_timestamp = None
 
 # =========================
 # HEARTBEAT TASK
@@ -435,50 +472,99 @@ async def before_monitor():
 # =========================
 def monitor_logs_thread():
     global roblox_running, last_roblox_disconnect_time
+    
+    # Snapshot the session start at thread startup to avoid race with reset
+    with state_lock:
+        session_start_snapshot = session_start
+    
     log_dir = get_log_dir()
     if not os.path.exists(log_dir):
         log_message(f"Roblox logs folder not found: {log_dir}")
         return
 
     try:
+        # Collect the current logs. If Roblox already created a log file before
+        # this thread starts (e.g. bot restarted while Roblox running), attach
+        # to the most recent existing log. Otherwise wait for a new log to be
+        # created.
         existing_logs = set(glob.glob(os.path.join(log_dir, "*.log")))
         new_log = None
-        while roblox_running:
-            current = set(glob.glob(os.path.join(log_dir, "*.log")))
-            new_logs = current - existing_logs
-            if new_logs:
-                new_log = max(new_logs, key=os.path.getctime)
-                break
-            time.sleep(0.5)
+
+        if existing_logs:
+            # Attach to the most recent existing log (this handles wrapper restarts)
+            new_log = max(existing_logs, key=os.path.getctime)
         else:
-            return  # Roblox stopped before finding a log
+            # Wait for the first log to appear
+            while roblox_running:
+                current = set(glob.glob(os.path.join(log_dir, "*.log")))
+                new_logs = current - existing_logs
+                if new_logs:
+                    new_log = max(new_logs, key=os.path.getctime)
+                    break
+                time.sleep(0.5)
+            else:
+                return  # Roblox stopped before finding a log
 
         log_message(f"Monitoring log file: {os.path.basename(new_log)}")
 
-        with open(new_log, "r", encoding="utf-8", errors="ignore") as f:
+        def get_elapsed():
+            """Calculate elapsed time from snapshot, avoid race with session_start reset."""
+            if session_start_snapshot == 0:
+                return 0
+            return max(0, int(time.monotonic() - session_start_snapshot))
+
+        # Open and tail the current log, but keep checking for a newer log file
+        # (rotation or Roblox creating a fresh file) and switch to it when found.
+        current_log = new_log
+        f = open(current_log, "r", encoding="utf-8", errors="ignore")
+        try:
             f.seek(0, os.SEEK_END)
             while True:
                 with state_lock:
                     if not roblox_running:
                         return
+
                 line = f.readline()
                 if not line:
+                    # Periodically check if a newer log file exists (rotation)
                     time.sleep(1)
+                    try:
+                        all_logs = glob.glob(os.path.join(log_dir, "*.log"))
+                        if not all_logs:
+                            continue
+                        latest = max(all_logs, key=os.path.getctime)
+                        if os.path.abspath(latest) != os.path.abspath(current_log):
+                            # Switch to the newer log
+                            log_message(f"Detected new log file, switching to: {os.path.basename(latest)}")
+                            f.close()
+                            current_log = latest
+                            f = open(current_log, "r", encoding="utf-8", errors="ignore")
+                            f.seek(0, os.SEEK_END)
+                            continue
+                    except Exception:
+                        # Ignore transient filesystem errors
+                        pass
                     continue
+
                 if "Lost connection with reason" in line or "Client has been disconnected with reason" in line:
                     with state_lock:
                         last_roblox_disconnect_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     log_message(f"Roblox disconnect detected: {line.strip()}")
                     # Use safe_dispatch to avoid scheduling on closed loop
-                    safe_dispatch(send_event, "DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(elapsed_time())}", 0xFF0000)
+                    safe_dispatch(send_event, "DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(get_elapsed())}", 0xFF0000)
                     close_roblox()
                     break
 
                 if "stop() called" in line:
                     log_message(f"Roblox closed: {line.strip()}")
-                    safe_dispatch(send_event, "ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(elapsed_time())}", 0xFFA500)
-                    close_roblox() # why the fuck?
+                    safe_dispatch(send_event, "ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(get_elapsed())}", 0xFFA500)
+                    close_roblox()  # DO NOT REMOVE, stop() called does not mean 100% exit
                     break
+        finally:
+            try:
+                f.close()
+            except Exception:
+                pass
     except Exception:
         log_message(traceback.format_exc())
 
@@ -486,21 +572,16 @@ def monitor_logs_thread():
 # MAIN
 # =========================
 if __name__ == "__main__":
-    # ==== SMART: Auto-restart wrapper (break on graceful exit) ====
-    while True:
-        try:
-            bot.run(DISCORD_TOKEN)
-            # bot.run returned normally -> clean exit; stop watchdog
-            break
-        except KeyboardInterrupt:
-            log_message("KeyboardInterrupt received, exiting gracefully...")
-            break
-        except SystemExit:
-            log_message("SystemExit received, stopping watchdog loop.")
-            break
-        except Exception:
-            # If it's a network/connectivity error at startup, give a longer retry gap
-            log_message(traceback.format_exc())
-            log_message("[WARN] Bot crashed, restarting in 10 seconds...")
-            time.sleep(10)
-            continue
+    # Note: Auto-restart logic has been moved to wrapper.py
+    # This script now runs once; the wrapper handles restarts on crash
+    try:
+        bot.run(DISCORD_TOKEN)
+    except KeyboardInterrupt:
+        log_message("KeyboardInterrupt received, exiting gracefully...")
+        sys.exit(0)
+    except SystemExit as e:
+        log_message(f"SystemExit received with code {e.code}.")
+        sys.exit(e.code if isinstance(e.code, int) else 1)
+    except Exception:
+        log_message(traceback.format_exc())
+        sys.exit(1)
