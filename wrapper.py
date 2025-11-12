@@ -301,12 +301,14 @@ Examples:
         action="version",
         version="%(prog)s 1.0.0",
     )
+    # Auto-update is enabled by default; provide a flag to disable it
     parser.add_argument(
-        "--auto-update",
-        action="store_true",
+        "--no-auto-update",
+        action="store_false",
         dest="auto_update",
-        help="Automatically fetch & pull updates from git before starting the bot",
+        help="Disable automatic fetch & pull updates from git before starting the bot",
     )
+    parser.set_defaults(auto_update=True)
     parser.add_argument(
         "--git-branch",
         type=str,
