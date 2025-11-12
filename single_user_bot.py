@@ -519,9 +519,9 @@ async def uptime(ctx):
     await send_event("SYSTEM UPTIME", desc, 0x00FFFF)
     log_message(f"[COMMAND] Uptime sent: Roblox={roblox_uptime}, Bot={bot_uptime}, OS={os_uptime}")
 
-@bot.command(name="help")
+@bot.command()
 @dm_only()
-async def help_cmd(ctx):
+async def help(ctx):
     """Show a short list of available commands and their purpose.
 
     This replaces the default help to keep it DM-only and restricted to the
