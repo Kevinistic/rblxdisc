@@ -430,6 +430,30 @@ async def shutdown(ctx):
     await bot.close()
     sys.exit(0)
 
+
+@bot.command()
+@dm_only()
+async def restart(ctx):
+    """Restart the bot process (wrapper should restart it).
+
+    This differs from shutdown: shutdown exits with code 0 (no restart),
+    restart exits with a non-zero code so the external wrapper can restart
+    the process.
+    """
+    log_message(f"Received restart command from {ctx.author} ({ctx.author.id})")
+    if ctx.author.id != USER_ID:
+        return
+    await send_event("BOT RESTART", "Restarting bot as requested.", 0xFFA500)
+    log_message("Restarting bot as per user command.")
+
+    # Give the message a moment to send
+    await asyncio.sleep(1)
+    try:
+        await bot.close()
+    finally:
+        # Exit with a non-zero code so the wrapper treats this as a restart
+        sys.exit(2)
+
 @bot.command()
 @dm_only()
 async def uptime(ctx):
