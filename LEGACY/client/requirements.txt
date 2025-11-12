@@ -1,5 +1,0 @@
-psutil
-requests
-discord.py
-flask
-python-dotenv
