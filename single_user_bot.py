@@ -49,6 +49,8 @@ log_file = None
 disconnect_timestamp = None
 last_discord_disconnect_time = 0
 last_roblox_disconnect_time = None
+# Track when this bot process started
+BOT_START_TIME = time.time()
 
 # Locks for thread safety
 log_lock = threading.Lock()
@@ -460,10 +462,32 @@ async def uptime(ctx):
     log_message(f"Received uptime command from {ctx.author} ({ctx.author.id})")
     if ctx.author.id != USER_ID:
         return
-    start_time = datetime.fromtimestamp(psutil.boot_time())
-    uptime_sec = int(time.time() - start_time.timestamp())
-    await send_event("SYSTEM UPTIME", f"Machine uptime: {hhmmss(uptime_sec)}", 0x00FFFF)
-    log_message(f"[COMMAND] Uptime sent: {hhmmss(uptime_sec)}")
+
+    # OS uptime
+    os_start = datetime.fromtimestamp(psutil.boot_time())
+    os_uptime_sec = int(time.time() - os_start.timestamp())
+    os_uptime = hhmmss(os_uptime_sec)
+
+    # Bot uptime
+    try:
+        bot_uptime_sec = int(time.time() - BOT_START_TIME)
+        bot_uptime = hhmmss(bot_uptime_sec)
+    except Exception:
+        bot_uptime = "N/A"
+
+    # Roblox uptime (session)
+    running = is_roblox_running()
+    roblox_uptime = hhmmss(elapsed_time()) if running else "N/A"
+
+    desc = (
+        f"Roblox uptime: {roblox_uptime}\n"
+        f"Bot uptime: {bot_uptime}\n"
+        f"OS uptime: {os_uptime}"
+    )
+
+    # Use cyan color for system info
+    await send_event("SYSTEM UPTIME", desc, 0x00FFFF)
+    log_message(f"[COMMAND] Uptime sent: Roblox={roblox_uptime}, Bot={bot_uptime}, OS={os_uptime}")
 
 # =========================
 # ROBLOX MONITORING TASK
