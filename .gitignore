@@ -1,7 +1,0 @@
-.env
-user_tokens.json
-logs
-.github
-__pycache__
-analysis
-.gitignore
