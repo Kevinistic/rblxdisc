@@ -14,17 +14,11 @@ import asyncio
 from datetime import datetime
 import aiohttp
 import io
-
-# Try to import screenshot dependencies
-SCREENSHOT_AVAILABLE = False
 try:
     import pyautogui
-    from PIL import Image
-    from PIL import ImageGrab
+    import PIL
     SCREENSHOT_AVAILABLE = True
-    print("[INFO] Screenshot dependencies available (pyautogui, PIL)")
-except ImportError as e:
-    print(f"[WARN] Screenshot dependencies not available: {e}")
+except ImportError:
     SCREENSHOT_AVAILABLE = False
 
 load_dotenv()
@@ -546,7 +540,7 @@ async def status(ctx):
     elapsed = hhmmss(elapsed_time()) if running else "N/A"
     
     # Prepare the status embed
-    status_text = f"Roblox running: {running}\nTime elapsed: {elapsed}"
+    status_text = ""
     color = 0x00FF00 if running else 0xFF0000
     
     # Attempt to capture screenshot if Roblox is running
