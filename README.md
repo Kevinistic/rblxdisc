@@ -4,11 +4,18 @@ connecting your client status to a discord bot<br>
 see for yourself here https://discord.gg/4UfEXVcHFy
 
 ## Guide
-run
+1. press the green '<> Code'
+2. click 'Download ZIP'
+3. extract to a file
+4. open terminal in the same file
+5. run
 ```python
 pip install -r requirements.txt
 ```
-
+6. run
+```python
+python wrapper.py
+```
 uhh idk man just paste the entire code to gpt
 
 ## Credits
