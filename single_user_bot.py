@@ -273,32 +273,63 @@ def capture_roblox_window():
     screenshot unavailable or Roblox window not found.
     """
     if not SCREENSHOT_AVAILABLE:
+        log_message("[DEBUG] Screenshot not available (pyautogui/PIL not imported)")
         return None
     
     try:
         import pyautogui
         from PIL import Image
         
-        # Suppress pyautogui's safety pause
+        log_message("[DEBUG] Attempting to capture screenshot...")
+        
+        # Suppress pyautogui's safety pause for speed
+        original_pause = pyautogui.PAUSE
         pyautogui.PAUSE = 0.01
         
-        # Try to find Roblox window using window name matching (platform-specific)
-        roblox_windows = []
         try:
-            # On Windows, use pyautogui.locateOnScreen or manual window detection
-            # For simplicity, capture the primary monitor (full screen approach)
-            # and let Discord display the image.
+            # Capture the primary monitor using PIL (more reliable than pyautogui.screenshot on some systems)
+            from PIL import ImageGrab
+            screenshot = ImageGrab.grab()
+            
+            if not screenshot:
+                log_message("[WARN] Screenshot captured but image is None")
+                return None
+            
+            log_message(f"[DEBUG] Screenshot captured: {screenshot.size}")
+            
+            # Convert PIL Image to bytes (PNG format)
+            img_bytes = io.BytesIO()
+            screenshot.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+            
+            log_message(f"[DEBUG] Image converted to PNG bytes: {len(img_bytes.getvalue())} bytes")
+            return img_bytes
+            
+        except ImportError:
+            # Fallback to pyautogui.screenshot if PIL.ImageGrab not available
+            log_message("[DEBUG] PIL.ImageGrab not available, trying pyautogui.screenshot()...")
             screenshot = pyautogui.screenshot()
-            if screenshot:
-                # Convert PIL Image to bytes (PNG format)
-                img_bytes = io.BytesIO()
-                screenshot.save(img_bytes, format='PNG')
-                img_bytes.seek(0)
-                return img_bytes
-        except Exception:
-            return None
+            
+            if not screenshot:
+                log_message("[WARN] pyautogui.screenshot() returned None")
+                return None
+            
+            log_message(f"[DEBUG] Screenshot captured via pyautogui: {screenshot.size}")
+            
+            img_bytes = io.BytesIO()
+            screenshot.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+            
+            log_message(f"[DEBUG] Image converted to PNG bytes: {len(img_bytes.getvalue())} bytes")
+            return img_bytes
+            
+        finally:
+            pyautogui.PAUSE = original_pause
+            
     except Exception as e:
-        log_message(f"[WARN] Failed to capture screenshot: {e}")
+        log_message(f"[ERROR] Screenshot capture failed: {type(e).__name__}: {e}")
+        import traceback
+        log_message(f"[ERROR] Traceback: {traceback.format_exc()}")
         return None
 
 
@@ -452,8 +483,22 @@ async def on_resumed():
 # =========================
 @tasks.loop(hours=HEARTBEAT_INTERVAL)
 async def heartbeat():
-    await send_event("HEARTBEAT", "Bot still active and responsive.", 0x00FFFF)
-    log_message("[HEARTBEAT] Bot alive notification sent.")
+    if bot.is_closed():
+        return
+    with state_lock:
+        mu = monitored_user
+    if not mu:
+        return
+    try:
+        embed = discord.Embed(title="HEARTBEAT", description="Bot still active and responsive.", color=0x00FFFF)
+        if FOOTER_TEXT:
+            embed.set_footer(text=FOOTER_TEXT, icon_url=FOOTER_ICON or discord.Embed.Empty)
+        content = f"<@{USER_ID}>" if PING_USER else None
+        await mu.send(content=content, embed=embed, delete_after=15)
+        log_message("[HEARTBEAT] Bot alive notification sent (will auto-delete in 15s).")
+    except Exception as e:
+        log_message(f"[WARN] Failed to send heartbeat: {e}")
+
 
 @heartbeat.before_loop
 async def before_heartbeat():
@@ -612,7 +657,19 @@ async def monitor_roblox():
                 session_start = time.monotonic()
             roblox_running = True
             log_message("Roblox session started")
-            safe_dispatch(send_event, "SESSION STARTED", "Roblox started. Monitoring logs...", 0x00FF00)
+            # Send SESSION STARTED embed with auto-delete after 15s
+            try:
+                embed = discord.Embed(title="SESSION STARTED", description="Roblox started. Monitoring logs...", color=0x00FF00)
+                if FOOTER_TEXT:
+                    embed.set_footer(text=FOOTER_TEXT, icon_url=FOOTER_ICON or discord.Embed.Empty)
+                content = f"<@{USER_ID}>" if PING_USER else None
+                with state_lock:
+                    mu = monitored_user
+                if mu:
+                    await mu.send(content=content, embed=embed, delete_after=15)
+                    log_message("SESSION STARTED embed sent (will auto-delete in 15s).")
+            except Exception as e:
+                log_message(f"[WARN] Failed to send session started embed: {e}")
             # Prevent double thread creation
             if not any(t.name == "RobloxLogMonitor" for t in threading.enumerate()):
                 threading.Thread(target=monitor_logs_thread, name="RobloxLogMonitor", daemon=True).start()
@@ -620,6 +677,7 @@ async def monitor_roblox():
             roblox_running = False
             session_start = 0
             await asyncio.sleep(0.1)
+
 
 @monitor_roblox.before_loop
 async def before_monitor():
