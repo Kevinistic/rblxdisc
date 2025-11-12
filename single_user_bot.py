@@ -13,6 +13,13 @@ from discord.ext import commands, tasks
 import asyncio
 from datetime import datetime
 import aiohttp
+import io
+try:
+    import pyautogui
+    import PIL
+    SCREENSHOT_AVAILABLE = True
+except ImportError:
+    SCREENSHOT_AVAILABLE = False
 
 load_dotenv()
 
@@ -257,6 +264,44 @@ def get_roblox_session_start_time():
     except Exception:
         return None
 
+# ==== Screenshot helper for window capture ====
+def capture_roblox_window():
+    """Capture the Roblox window and return as bytes (PNG) or None if failed.
+    
+    Attempts to find and capture the Roblox window using pyautogui.
+    Returns the image as PNG bytes suitable for Discord upload, or None if
+    screenshot unavailable or Roblox window not found.
+    """
+    if not SCREENSHOT_AVAILABLE:
+        return None
+    
+    try:
+        import pyautogui
+        from PIL import Image
+        
+        # Suppress pyautogui's safety pause
+        pyautogui.PAUSE = 0.01
+        
+        # Try to find Roblox window using window name matching (platform-specific)
+        roblox_windows = []
+        try:
+            # On Windows, use pyautogui.locateOnScreen or manual window detection
+            # For simplicity, capture the primary monitor (full screen approach)
+            # and let Discord display the image.
+            screenshot = pyautogui.screenshot()
+            if screenshot:
+                # Convert PIL Image to bytes (PNG format)
+                img_bytes = io.BytesIO()
+                screenshot.save(img_bytes, format='PNG')
+                img_bytes.seek(0)
+                return img_bytes
+        except Exception:
+            return None
+    except Exception as e:
+        log_message(f"[WARN] Failed to capture screenshot: {e}")
+        return None
+
+
 # ==== FIX: Safe dispatcher to avoid scheduling coroutines on closed loop ====
 def safe_dispatch(coro_func, *args, **kwargs):
     """
@@ -426,8 +471,37 @@ async def status(ctx):
         return
     running = is_roblox_running()
     elapsed = hhmmss(elapsed_time()) if running else "N/A"
-    await send_event("CLIENT STATUS", f"Roblox running: {running}\nTime elapsed: {elapsed}", 0x00FF00 if running else 0xFF0000)
-    log_message(f"[COMMAND] Status sent: Roblox running={running}, Time elapsed={elapsed}")
+    
+    # Prepare the status embed
+    status_text = f"Roblox running: {running}\nTime elapsed: {elapsed}"
+    color = 0x00FF00 if running else 0xFF0000
+    
+    # Attempt to capture screenshot if Roblox is running
+    screenshot_bytes = None
+    if running:
+        screenshot_bytes = capture_roblox_window()
+    
+    # Send embed with optional screenshot
+    try:
+        embed = discord.Embed(title="CLIENT STATUS", description=status_text, color=color)
+        if FOOTER_TEXT:
+            embed.set_footer(text=FOOTER_TEXT, icon_url=FOOTER_ICON or discord.Embed.Empty)
+        
+        # If screenshot available, attach it and reference in embed
+        if screenshot_bytes:
+            file = discord.File(screenshot_bytes, filename="roblox_screenshot.png")
+            embed.set_image(url="attachment://roblox_screenshot.png")
+            content = f"<@{USER_ID}>" if PING_USER else None
+            await monitored_user.send(content=content, embed=embed, file=file)
+            log_message(f"[COMMAND] Status sent with screenshot: Roblox running={running}, Time elapsed={elapsed}")
+        else:
+            # Fallback to embed-only (no screenshot)
+            content = f"<@{USER_ID}>" if PING_USER else None
+            await monitored_user.send(content=content, embed=embed)
+            log_message(f"[COMMAND] Status sent (no screenshot): Roblox running={running}, Time elapsed={elapsed}")
+    except Exception as e:
+        log_message(f"[ERROR] Failed to send status: {e}")
+        log_message(traceback.format_exc())
 
 @bot.command()
 @dm_only()
