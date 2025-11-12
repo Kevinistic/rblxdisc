@@ -375,6 +375,24 @@ async def send_event(title, description, color=0xFF0000):
     except Exception:
         log_message(traceback.format_exc())
 
+async def send_session_started_event():
+    """Send session started embed with auto-delete after 15s."""
+    if bot.is_closed():
+        return
+    with state_lock:
+        mu = monitored_user
+    if not mu:
+        return
+    try:
+        embed = discord.Embed(title="SESSION STARTED", description="Roblox started. Monitoring logs...", color=0x00FF00)
+        if FOOTER_TEXT:
+            embed.set_footer(text=FOOTER_TEXT, icon_url=FOOTER_ICON or discord.Embed.Empty)
+        content = f"<@{USER_ID}>" if PING_USER else None
+        await mu.send(content=content, embed=embed, delete_after=15)
+        log_message("SESSION STARTED embed sent (will auto-delete in 15s).")
+    except Exception as e:
+        log_message(f"[WARN] Failed to send session started embed: {e}")
+
 # =========================
 # SIGNAL HANDLER (SIGTERM)
 # =========================
@@ -481,8 +499,8 @@ async def on_resumed():
 # =========================
 # HEARTBEAT TASK
 # =========================
-@tasks.loop(hours=HEARTBEAT_INTERVAL)
-async def heartbeat():
+async def send_heartbeat_event():
+    """Send heartbeat embed with auto-delete."""
     if bot.is_closed():
         return
     with state_lock:
@@ -498,6 +516,10 @@ async def heartbeat():
         log_message("[HEARTBEAT] Bot alive notification sent (will auto-delete in 15s).")
     except Exception as e:
         log_message(f"[WARN] Failed to send heartbeat: {e}")
+
+@tasks.loop(hours=HEARTBEAT_INTERVAL)
+async def heartbeat():
+    await send_heartbeat_event()
 
 
 @heartbeat.before_loop
@@ -657,19 +679,8 @@ async def monitor_roblox():
                 session_start = time.monotonic()
             roblox_running = True
             log_message("Roblox session started")
-            # Send SESSION STARTED embed with auto-delete after 15s
-            try:
-                embed = discord.Embed(title="SESSION STARTED", description="Roblox started. Monitoring logs...", color=0x00FF00)
-                if FOOTER_TEXT:
-                    embed.set_footer(text=FOOTER_TEXT, icon_url=FOOTER_ICON or discord.Embed.Empty)
-                content = f"<@{USER_ID}>" if PING_USER else None
-                with state_lock:
-                    mu = monitored_user
-                if mu:
-                    await mu.send(content=content, embed=embed, delete_after=15)
-                    log_message("SESSION STARTED embed sent (will auto-delete in 15s).")
-            except Exception as e:
-                log_message(f"[WARN] Failed to send session started embed: {e}")
+            # Use safe_dispatch to send SESSION STARTED with auto-delete
+            safe_dispatch(send_session_started_event)
             # Prevent double thread creation
             if not any(t.name == "RobloxLogMonitor" for t in threading.enumerate()):
                 threading.Thread(target=monitor_logs_thread, name="RobloxLogMonitor", daemon=True).start()
