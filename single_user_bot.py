@@ -227,6 +227,36 @@ def get_log_dir():
     else:
         return os.path.expanduser("~/.var/app/org.vinegarhq.Sober/data/sober/sober_logs/")
 
+
+def get_roblox_session_start_time():
+    """Return a monotonic-based session start time for the currently running
+    Roblox process, or None if not found.
+
+    This computes: monotonic_start = time.monotonic() - (time.time() - proc.create_time())
+    which lets us calculate elapsed time using monotonic clocks (safer against
+    system clock jumps) while deriving the start from the process create time.
+    """
+    try:
+        procs = []
+        for p in psutil.process_iter(['pid', 'name', 'create_time']):
+            try:
+                name = (p.info.get('name') or '').lower()
+                if 'roblox' in name:
+                    ct = p.info.get('create_time')
+                    if ct:
+                        procs.append((p.info['pid'], ct))
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        if not procs:
+            return None
+        # Choose the earliest create_time (longest-running matching process)
+        _, earliest_ct = min(procs, key=lambda x: x[1])
+        # Convert to monotonic-based start
+        monotonic_start = time.monotonic() - (time.time() - earliest_ct)
+        return monotonic_start
+    except Exception:
+        return None
+
 # ==== FIX: Safe dispatcher to avoid scheduling coroutines on closed loop ====
 def safe_dispatch(coro_func, *args, **kwargs):
     """
@@ -499,8 +529,14 @@ async def monitor_roblox():
     running = is_roblox_running()
     with state_lock:
         if running and not roblox_running:
+            # Compute a more accurate session start using the Roblox process create_time
+            computed_start = get_roblox_session_start_time()
+            if computed_start:
+                session_start = computed_start
+            else:
+                # Fallback to monotonic now
+                session_start = time.monotonic()
             roblox_running = True
-            session_start = time.monotonic()
             log_message("Roblox session started")
             safe_dispatch(send_event, "SESSION STARTED", "Roblox started. Monitoring logs...", 0x00FF00)
             # Prevent double thread creation
