@@ -14,11 +14,17 @@ import asyncio
 from datetime import datetime
 import aiohttp
 import io
+
+# Try to import screenshot dependencies
+SCREENSHOT_AVAILABLE = False
 try:
     import pyautogui
-    import PIL
+    from PIL import Image
+    from PIL import ImageGrab
     SCREENSHOT_AVAILABLE = True
-except ImportError:
+    print("[INFO] Screenshot dependencies available (pyautogui, PIL)")
+except ImportError as e:
+    print(f"[WARN] Screenshot dependencies not available: {e}")
     SCREENSHOT_AVAILABLE = False
 
 load_dotenv()
