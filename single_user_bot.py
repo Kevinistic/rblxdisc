@@ -519,6 +519,33 @@ async def uptime(ctx):
     await send_event("SYSTEM UPTIME", desc, 0x00FFFF)
     log_message(f"[COMMAND] Uptime sent: Roblox={roblox_uptime}, Bot={bot_uptime}, OS={os_uptime}")
 
+@bot.command(name="help")
+@dm_only()
+async def help_cmd(ctx):
+    """Show a short list of available commands and their purpose.
+
+    This replaces the default help to keep it DM-only and restricted to the
+    configured USER_ID.
+    """
+    log_message(f"Received help command from {ctx.author} ({ctx.author.id})")
+    if ctx.author.id != USER_ID:
+        return
+
+    help_text = (
+        "Available commands:\n"
+        "!status — Show whether Roblox is running and current session elapsed time.\n"
+        "!uptime — Show Roblox uptime (or N/A), Bot uptime, and OS uptime.\n"
+        "!kill — Kill any running Roblox processes.\n"
+        "!ping — Simple health check (PONG).\n"
+        "!restart — Restart the bot (wrapper will restart the process).\n"
+        "!shutdown — Shut down the bot (no automatic restart).\n"
+        "!help — Show this help message.\n"
+        "\nNotes: All commands are DM-only and restricted to the configured USER_ID."
+    )
+
+    await send_event("HELP", help_text, 0x00FFFF)
+    log_message("[COMMAND] Help sent.")
+
 # =========================
 # ROBLOX MONITORING TASK
 # =========================
