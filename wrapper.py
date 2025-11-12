@@ -234,6 +234,26 @@ def run_wrapper(args):
         if return_code == 1:
             logger.warn("Bot exited with code 1 (likely configuration error). Stopping wrapper.")
             break
+
+        # If the bot requested a restart (specific exit code), run auto-update
+        # before restarting. Exit code 2 is used by the bot's !restart command.
+        if return_code == 2:
+            logger.info("Bot requested restart (exit code 2). Running auto-update (if enabled) before restart.")
+            if args.auto_update:
+                try:
+                    git_root = find_git_root(SCRIPT_DIR)
+                    if git_root:
+                        updated = git_fetch_and_pull(git_root, args.git_branch, logger)
+                        if updated:
+                            logger.info("Repository updated during user-requested restart.")
+                        else:
+                            logger.debug("No updates found during user-requested restart.")
+                    else:
+                        logger.warn("Git repository root not found; skipping auto-update.")
+                except Exception as e:
+                    logger.error(f"Auto-update during restart failed: {e}")
+            # Treat this as an intentional restart — do not count as crash. Restart immediately.
+            continue
         
         # Process crashed
         state.record_crash()
