@@ -468,6 +468,8 @@ async def on_disconnect():
 
 @bot.event
 async def on_resumed():
+    global disconnect_timestamp, last_roblox_disconnect_time
+
     log_message("Resumed connection to Discord!")
 
     # Atomically read disconnect timestamps
