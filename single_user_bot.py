@@ -208,7 +208,8 @@ def is_roblox_running():
             return _last_running
         _last_check = time.time()
         _last_running = any(
-            "roblox" in (p.info.get('name') or "").lower()
+            "roblox" in (p.info.get('name') or "").lower() or 
+            (p.info.get('name') or "").lower() == "sober"
             for p in psutil.process_iter(['name'])
         )
         return _last_running
@@ -217,7 +218,7 @@ def close_roblox():
     killed = 0
     for proc in psutil.process_iter(['name']):
         name = (proc.info.get('name') or "").lower()
-        if "robloxplayerbeta" in name or name == "roblox":
+        if "robloxplayerbeta" in name or name == "roblox" or name == "sober":
             try:
                 proc.kill()
                 killed += 1
@@ -248,7 +249,7 @@ def get_roblox_session_start_time():
         for p in psutil.process_iter(['pid', 'name', 'create_time']):
             try:
                 name = (p.info.get('name') or '').lower()
-                if 'roblox' in name:
+                if 'roblox' in name or name == 'sober':
                     ct = p.info.get('create_time')
                     if ct:
                         procs.append((p.info['pid'], ct))
