@@ -544,7 +544,6 @@ async def status(ctx):
     
     # Prepare the status embed
     status_text = ""
-    color = 0x00FF00 if running else 0xFF0000
     
     # Attempt to capture screenshot if Roblox is running
     screenshot_bytes = None
@@ -553,7 +552,7 @@ async def status(ctx):
     
     # Send embed with optional screenshot
     try:
-        embed = discord.Embed(title="CLIENT STATUS", description=status_text, color=color)
+        embed = discord.Embed(title="CLIENT STATUS", description=status_text)
         if FOOTER_TEXT:
             embed.set_footer(text=FOOTER_TEXT, icon_url=FOOTER_ICON or discord.Embed.Empty)
         
