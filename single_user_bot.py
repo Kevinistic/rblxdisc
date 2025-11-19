@@ -581,7 +581,7 @@ async def kill(ctx):
         return
     killed = close_roblox()
     msg = f"Killed {killed} Roblox process(es)." if killed else "No Roblox processes found to kill."
-    await send_event("ROBLOX KILL", msg, color=0xFF0000 if killed else 0xAAAAAA)
+    await send_event("ROBLOX KILL", msg)
     log_message(f"[COMMAND] {msg}")
 
 @bot.command()
@@ -590,7 +590,7 @@ async def ping(ctx):
     log_message(f"Received ping command from {ctx.author} ({ctx.author.id})")
     if ctx.author.id != USER_ID:
         return
-    await send_event("PONG", "The bot is active and responsive.", color=0x00FF00)
+    await send_event("PONG", "The bot is active and responsive.")
     log_message("[COMMAND] Pong response sent.")
 
 @bot.command()
@@ -599,7 +599,7 @@ async def shutdown(ctx):
     log_message(f"Received shutdown command from {ctx.author} ({ctx.author.id})")
     if ctx.author.id != USER_ID:
         return
-    await send_event("BOT SHUTDOWN", "The bot is shutting down as per your request.", 0xFF0000)
+    await send_event("BOT SHUTDOWN", "The bot is shutting down as per your request.")
     log_message("Shutting down bot as per user command.")
 
     await asyncio.sleep(1)
@@ -619,7 +619,7 @@ async def restart(ctx):
     log_message(f"Received restart command from {ctx.author} ({ctx.author.id})")
     if ctx.author.id != USER_ID:
         return
-    await send_event("BOT RESTART", "Restarting bot as requested.", 0xFFA500)
+    await send_event("BOT RESTART", "Restarting bot as requested.")
     log_message("Restarting bot as per user command.")
 
     # Give the message a moment to send
@@ -660,7 +660,7 @@ async def uptime(ctx):
     )
 
     # Use cyan color for system info
-    await send_event("SYSTEM UPTIME", desc, 0x00FFFF)
+    await send_event("SYSTEM UPTIME", desc)
     log_message(f"[COMMAND] Uptime sent: Roblox={roblox_uptime}, Bot={bot_uptime}, OS={os_uptime}")
 
 # =========================
