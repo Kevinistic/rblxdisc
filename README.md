@@ -6,21 +6,28 @@
 1. press the green '<> Code'
 2. click 'Download ZIP'
 3. extract to a file
-4. open terminal in the same file
+4. create a new file called ".env" in the same folder (.env, not env! make sure the dot is there)!
+5. open the .env file on notepad
+6. insert and save:
+```bash
+DISCORD_TOKEN=<your discord bot token here>
+USER_ID=<your discord account user id here>
+```
+7. open terminal in the same file
 ### For Linux (SKIP IF YOU USE WINDOWS)
-4. 1. just run the code below:
+7. 1. just run the code below:
 ```bash
 sudo apt update
 sudo apt install python3 python3-pip python3-venv git -y
 sudo apt install scrot python3-tk python3-dev -y
 ```
-4. 2. when done, continue to step 5
+7. 2. when done, continue to step 5
 
-5. run
+8. run
 ```bash
 pip install -r requirements.txt
 ```
-6. run
+9. run this every time you want to start the whole thing (after pc restart, etc)
 ```bash
 python wrapper.py # RUN ONLY THIS IF WINDOWS
 python3 wrapper.py # RUN ONLY THIS IF LINUX
