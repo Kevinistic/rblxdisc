@@ -46,6 +46,8 @@ HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "3"))  # in hours
 if not DISCORD_TOKEN or not USER_ID:
     sys.exit("[FATAL] DISCORD_TOKEN or USER_ID missing in .env")
 
+
+
 # =========================
 # GLOBAL STATE
 # =========================
@@ -171,7 +173,7 @@ init_log_file()
 # =========================
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents, status=discord.Status.invisible, activity=None)
+bot = commands.Bot(command_prefix="!", intents=intents, status=discord.Status.invisible, activity=None, help_command=None)
 
 # =========================
 # DECORATORS
@@ -400,7 +402,7 @@ async def send_session_started_event():
 def handle_sigterm(signum, frame):
     log_message("Received SIGTERM. Shutting down gracefully...")
     # Try to notify user if possible (use safe_dispatch to avoid dead-loop scheduling)
-    safe_dispatch(send_event, "BOT SHUTDOWN", "Received SIGTERM, shutting down...", 0xFF0000)
+    safe_dispatch(send_event, "BOT SHUTDOWN", "Received SIGTERM, shutting down...")
 
     # Give Discord message a moment to send
     time.sleep(0.5)
@@ -494,7 +496,7 @@ async def on_resumed():
             pass
 
     # Use safe_dispatch to avoid scheduling on closed loop
-    safe_dispatch(send_event, "BOT DISCONNECTED", f"Reconnected after disconnect at {dt_disconnect}" + possibledisconnect, 0xFFA500)
+    safe_dispatch(send_event, "BOT DISCONNECTED", f"Reconnected after disconnect at {dt_disconnect}" + possibledisconnect)
     
     with state_lock:
         disconnect_timestamp = None
@@ -658,9 +660,31 @@ async def uptime(ctx):
         f"OS uptime: {os_uptime}"
     )
 
-    # Use cyan color for system info
     await send_event("SYSTEM UPTIME", desc)
     log_message(f"[COMMAND] Uptime sent: Roblox={roblox_uptime}, Bot={bot_uptime}, OS={os_uptime}")
+
+@bot.command(name='help')
+@dm_only()
+async def help_command(ctx):
+    """Display all available bot commands."""
+    log_message(f"Received help command from {ctx.author} ({ctx.author.id})")
+    if ctx.author.id != USER_ID:
+        return
+    
+    commands_list = [
+        ("!status", "Check Roblox status + screenshot"),
+        ("!kill", "Kill Roblox processes"),
+        ("!ping", "Test bot responsiveness"),
+        ("!shutdown", "Shut down the bot"),
+        ("!restart", "Restart the bot"),
+        ("!uptime", "Show uptime statistics"),
+        ("!help", "Show this message")
+    ]
+    
+    description = "\n".join([f"`{cmd}` - {desc}" for cmd, desc in commands_list])
+
+    await send_event("AVAILABLE COMMANDS", description)
+    log_message("[COMMAND] Help message sent.")
 
 # =========================
 # ROBLOX MONITORING TASK
@@ -780,13 +804,13 @@ def monitor_logs_thread():
                         last_roblox_disconnect_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     log_message(f"Roblox disconnect detected: {line.strip()}")
                     # Use safe_dispatch to avoid scheduling on closed loop
-                    safe_dispatch(send_event, "DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(get_elapsed())}", 0xFF0000)
+                    safe_dispatch(send_event, "DISCONNECT DETECTED", f"{line.strip()}\nTime elapsed: {hhmmss(get_elapsed())}")
                     close_roblox()
                     break
 
                 if "stop() called" in line:
                     log_message(f"Roblox closed: {line.strip()}")
-                    safe_dispatch(send_event, "ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(get_elapsed())}", 0xFFA500)
+                    safe_dispatch(send_event, "ROBLOX CLOSED", f"Process ended.\nTime elapsed: {hhmmss(get_elapsed())}")
                     close_roblox()  # DO NOT REMOVE, stop() called does not mean 100% exit
                     break
         finally:
