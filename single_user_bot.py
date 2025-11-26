@@ -46,7 +46,12 @@ HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "3"))  # in hours
 if not DISCORD_TOKEN or not USER_ID:
     sys.exit("[FATAL] DISCORD_TOKEN or USER_ID missing in .env")
 
-
+DISCONNECT_KEYWORDS = (
+    "Lost connection with reason",
+    "Client has been disconnected with reason",
+    "Disconnection Notification.",
+    # Add more keywords here in the future
+)
 
 # =========================
 # GLOBAL STATE
@@ -268,7 +273,7 @@ def get_roblox_session_start_time():
         return None
 
 # ==== Screenshot helper for window capture ====
-def capture_roblox_window():
+def capture_window():
     """Capture the Roblox window and return as bytes (PNG) or None if failed.
     
     Attempts to find and capture the Roblox window using pyautogui.
@@ -541,16 +546,12 @@ async def status(ctx):
     log_message(f"Received status command from {ctx.author} ({ctx.author.id})")
     if ctx.author.id != USER_ID:
         return
-    running = is_roblox_running()
-    elapsed = hhmmss(elapsed_time()) if running else "N/A"
     
     # Prepare the status embed
     status_text = ""
     
-    # Attempt to capture screenshot if Roblox is running
-    screenshot_bytes = None
-    if running:
-        screenshot_bytes = capture_roblox_window()
+    # Attempt to capture screenshot
+    screenshot_bytes = capture_window()
     
     # Send embed with optional screenshot
     try:
@@ -564,12 +565,12 @@ async def status(ctx):
             embed.set_image(url="attachment://roblox_screenshot.png")
             content = f"<@{USER_ID}>" if PING_USER else None
             await monitored_user.send(content=content, embed=embed, file=file)
-            log_message(f"[COMMAND] Status sent with screenshot: Roblox running={running}, Time elapsed={elapsed}")
+            log_message(f"[COMMAND] Status sent with screenshot")
         else:
             # Fallback to embed-only (no screenshot)
             content = f"<@{USER_ID}>" if PING_USER else None
             await monitored_user.send(content=content, embed=embed)
-            log_message(f"[COMMAND] Status sent (no screenshot): Roblox running={running}, Time elapsed={elapsed}")
+            log_message(f"[COMMAND] Status sent (no screenshot)")
     except Exception as e:
         log_message(f"[ERROR] Failed to send status: {e}")
         log_message(traceback.format_exc())
@@ -799,7 +800,7 @@ def monitor_logs_thread():
                         pass
                     continue
 
-                if "Lost connection with reason" in line or "Client has been disconnected with reason" in line:
+                if any(keyword in line for keyword in DISCONNECT_KEYWORDS):
                     with state_lock:
                         last_roblox_disconnect_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     log_message(f"Roblox disconnect detected: {line.strip()}")
