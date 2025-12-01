@@ -675,7 +675,10 @@ async def setflag(ctx):
         return
     
     flag_dc = not flag_dc
-    await send_event(f"DISCONNECT FLAG SET", "The disconnect flag has been set to {flag_dc}.")
+    if flag_dc:
+        await send_event(f"DISCONNECT FLAG SET", "The disconnect flag has been set to true. The next detected disconnect will be ignored.")
+    else:
+        await send_event(f"DISCONNECT FLAG CLEARED", "The disconnect flag has been cleared. Disconnects will be handled normally.")
     log_message("[COMMAND] Disconnect flag set.")
 
 @bot.command(name='help')
