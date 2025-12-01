@@ -63,6 +63,7 @@ log_file = None
 disconnect_timestamp = None
 last_discord_disconnect_time = 0
 last_roblox_disconnect_time = None
+flag_dc = False
 # Track when this bot process started
 BOT_START_TIME = time.time()
 
@@ -664,6 +665,19 @@ async def uptime(ctx):
     await send_event("SYSTEM UPTIME", desc)
     log_message(f"[COMMAND] Uptime sent: Roblox={roblox_uptime}, Bot={bot_uptime}, OS={os_uptime}")
 
+@bot.command()
+@dm_only()
+async def setflag(ctx):
+    """Set the disconnect flag to ignore the next detected disconnect."""
+    global flag_dc
+    log_message(f"Received setflag command from {ctx.author} ({ctx.author.id})")
+    if ctx.author.id != USER_ID:
+        return
+    
+    flag_dc = not flag_dc
+    await send_event(f"DISCONNECT FLAG SET", "The disconnect flag has been set to {flag_dc}.")
+    log_message("[COMMAND] Disconnect flag set.")
+
 @bot.command(name='help')
 @dm_only()
 async def help_command(ctx):
@@ -679,6 +693,7 @@ async def help_command(ctx):
         ("!shutdown", "Shut down the bot"),
         ("!restart", "Restart the bot"),
         ("!uptime", "Show uptime statistics"),
+        ("!setflag", "Toggle disconnect ignore flag"),
         ("!help", "Show this message")
     ]
     
@@ -725,7 +740,7 @@ async def before_monitor():
 # LOG MONITORING
 # =========================
 def monitor_logs_thread():
-    global roblox_running, last_roblox_disconnect_time
+    global roblox_running, last_roblox_disconnect_time, flag_dc
     
     # Snapshot the session start at thread startup to avoid race with reset
     with state_lock:
@@ -801,6 +816,11 @@ def monitor_logs_thread():
                     continue
 
                 if any(keyword in line for keyword in DISCONNECT_KEYWORDS):
+                    if flag_dc:
+                        flag_dc = False
+                        log_message("TP once flag detected, skipping disconnect handling.")
+                        continue
+
                     with state_lock:
                         last_roblox_disconnect_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     log_message(f"Roblox disconnect detected: {line.strip()}")
